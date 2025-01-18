@@ -1,0 +1,514 @@
+From 56d72f8919459362e429e89f783abb33e32d8709 Mon Sep 17 00:00:00 2001
+From: Michael Catanzaro <mcatanzaro@redhat.com>
+Date: Fri, 5 May 2023 06:36:29 -0700
+Subject: [PATCH] [GLib] Audit and fix incorrect use of (closure) in WebKit
+ https://bugs.webkit.org/show_bug.cgi?id=256335
+
+Reviewed by Adrian Perez de Castro.
+
+Following Emmanuele's guidance in https://www.bassi.io/articles/2023/02/20/bindable-api-2023/ I have audited our use of (closure) annotations in WebKit and found they are all incorrect. Unary (closure) is only allowed on function typedefs; in function declarations an argument is always required, e.g. (closure user_data). But (closure user_data) is actually default, so most of our annotations can actually be removed.
+
+It looks like this was not causing many problems in practice. For example, let's look at the callback parameter to jsc_class_add_constructor generated *before* this patch:
+
+          <parameter name="callback"
+                     transfer-ownership="none"
+                     scope="notified"
+                     closure="2"
+                     destroy="3">
+            <doc xml:space="preserve"
+                 filename="Source/JavaScriptCore/API/glib/JSCClass.cpp"
+                 line="569">a #GCallback to be called to create an instance of @jsc_class</doc>
+            <type name="GObject.Callback" c:type="GCallback"/>
+          </parameter>
+
+This already looks fine: it knows the closure parameter comes right after callback, which is the correct order. So even though Emmanuele says this use of unary closure was incorrect, it wasn't causing problems in practice.
+
+Looking through the generated JavaScriptCore-6.0.gir, this results in gir changes for only jsc_value_new_array_buffer and jsc_value_new_typed_array_with_buffer, where the closure parameter was previously not detected, which is now fixed. I don't think this resulted in any changes to WebKit-6.0.gir.
+
+I've also fixed WPE's webkit_web_view_add_frame_displayed_callback() where the callback parameter defaulted to (scope call), causing it to be valid only for the duration of the function call.
+
+* Source/JavaScriptCore/API/glib/JSCClass.cpp:
+* Source/JavaScriptCore/API/glib/JSCContext.cpp:
+* Source/JavaScriptCore/API/glib/JSCValue.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitCookieManager.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitFaviconDatabase.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitNetworkSession.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitUserContentFilterStore.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitWebResource.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitWebView.cpp:
+* Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManager.cpp:
+* Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebExtension.cpp:
+* Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebPage.cpp:
+* Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebProcessExtension.cpp:
+
+Canonical link: https://commits.webkit.org/263714@main
+---
+ Source/JavaScriptCore/API/glib/JSCClass.cpp   | 14 +++++-----
+ Source/JavaScriptCore/API/glib/JSCContext.cpp |  6 ++---
+ Source/JavaScriptCore/API/glib/JSCValue.cpp   | 16 ++++++------
+ .../API/glib/WebKitCookieManager.cpp          | 10 +++----
+ .../API/glib/WebKitFaviconDatabase.cpp        |  4 +--
+ .../API/glib/WebKitNetworkSession.cpp         |  2 +-
+ .../API/glib/WebKitUserContentFilterStore.cpp | 10 +++----
+ .../UIProcess/API/glib/WebKitWebContext.cpp   |  2 +-
+ .../UIProcess/API/glib/WebKitWebResource.cpp  |  2 +-
+ .../UIProcess/API/glib/WebKitWebView.cpp      | 26 +++++++++----------
+ .../API/glib/WebKitWebsiteDataManager.cpp     |  8 +++---
+ .../API/glib/WebKitWebExtension.cpp           |  4 +--
+ .../InjectedBundle/API/glib/WebKitWebPage.cpp |  4 +--
+ .../API/glib/WebKitWebProcessExtension.cpp    |  4 +--
+ 14 files changed, 56 insertions(+), 56 deletions(-)
+
+diff --git a/Source/JavaScriptCore/API/glib/JSCClass.cpp b/Source/JavaScriptCore/API/glib/JSCClass.cpp
+index 49e2ddfed3133..98c10c86c1e53 100644
+--- a/Source/JavaScriptCore/API/glib/JSCClass.cpp
++++ b/Source/JavaScriptCore/API/glib/JSCClass.cpp
+@@ -567,7 +567,7 @@ static GRefPtr<JSCValue> jscClassCreateConstructor(JSCClass* jscClass, const cha
+  * @jsc_class: a #JSCClass
+  * @name: (nullable): the constructor name or %NULL
+  * @callback: (scope async): a #GCallback to be called to create an instance of @jsc_class
+- * @user_data: (closure): user data to pass to @callback
++ * @user_data: user data to pass to @callback
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the constructor return value
+  * @n_params: the number of parameter types to follow or 0 if constructor doesn't receive parameters.
+@@ -616,7 +616,7 @@ JSCValue* jsc_class_add_constructor(JSCClass* jscClass, const char* name, GCallb
+  * @jsc_class: a #JSCClass
+  * @name: (nullable): the constructor name or %NULL
+  * @callback: (scope async): a #GCallback to be called to create an instance of @jsc_class
+- * @user_data: (closure): user data to pass to @callback
++ * @user_data: user data to pass to @callback
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the constructor return value
+  * @n_parameters: the number of parameters
+@@ -662,7 +662,7 @@ JSCValue* jsc_class_add_constructorv(JSCClass* jscClass, const char* name, GCall
+  * @jsc_class: a #JSCClass
+  * @name: (nullable): the constructor name or %NULL
+  * @callback: (scope async): a #GCallback to be called to create an instance of @jsc_class
+- * @user_data: (closure): user data to pass to @callback
++ * @user_data: user data to pass to @callback
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the constructor return value
+  *
+@@ -714,7 +714,7 @@ static void jscClassAddMethod(JSCClass* jscClass, const char* name, GCallback ca
+  * @jsc_class: a #JSCClass
+  * @name: the method name
+  * @callback: (scope async): a #GCallback to be called to invoke method @name of @jsc_class
+- * @user_data: (closure): user data to pass to @callback
++ * @user_data: user data to pass to @callback
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the method return value, or %G_TYPE_NONE if the method is void.
+  * @n_params: the number of parameter types to follow or 0 if the method doesn't receive parameters.
+@@ -755,7 +755,7 @@ void jsc_class_add_method(JSCClass* jscClass, const char* name, GCallback callba
+  * @jsc_class: a #JSCClass
+  * @name: the method name
+  * @callback: (scope async): a #GCallback to be called to invoke method @name of @jsc_class
+- * @user_data: (closure): user data to pass to @callback
++ * @user_data: user data to pass to @callback
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the method return value, or %G_TYPE_NONE if the method is void.
+  * @n_parameters: the number of parameter types to follow or 0 if the method doesn't receive parameters.
+@@ -794,7 +794,7 @@ void jsc_class_add_methodv(JSCClass* jscClass, const char* name, GCallback callb
+  * @jsc_class: a #JSCClass
+  * @name: the method name
+  * @callback: (scope async): a #GCallback to be called to invoke method @name of @jsc_class
+- * @user_data: (closure): user data to pass to @callback
++ * @user_data: user data to pass to @callback
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the method return value, or %G_TYPE_NONE if the method is void.
+  *
+@@ -825,7 +825,7 @@ void jsc_class_add_method_variadic(JSCClass* jscClass, const char* name, GCallba
+  * @property_type: the #GType of the property value
+  * @getter: (scope async) (nullable): a #GCallback to be called to get the property value
+  * @setter: (scope async) (nullable): a #GCallback to be called to set the property value
+- * @user_data: (closure): user data to pass to @getter and @setter
++ * @user_data: user data to pass to @getter and @setter
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  *
+  * Add a property with @name to @jsc_class. When the property value needs to be getted, @getter is called
+diff --git a/Source/JavaScriptCore/API/glib/JSCContext.cpp b/Source/JavaScriptCore/API/glib/JSCContext.cpp
+index 073302fdc60ff..bfc996104a8df 100644
+--- a/Source/JavaScriptCore/API/glib/JSCContext.cpp
++++ b/Source/JavaScriptCore/API/glib/JSCContext.cpp
+@@ -759,7 +759,7 @@ void jsc_context_clear_exception(JSCContext* context)
+  * JSCExceptionHandler:
+  * @context: a #JSCContext
+  * @exception: a #JSCException
+- * @user_data: user data
++ * @user_data: (closure): user data
+  *
+  * Function used to handle JavaScript exceptions in a #JSCContext.
+  */
+@@ -767,8 +767,8 @@ void jsc_context_clear_exception(JSCContext* context)
+ /**
+  * jsc_context_push_exception_handler:
+  * @context: a #JSCContext
+- * @handler: a #JSCExceptionHandler
+- * @user_data: (closure): user data to pass to @handler
++ * @handler: (closure user_data): a #JSCExceptionHandler
++ * @user_data: user data to pass to @handler
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  *
+  * Push an exception handler in @context. Whenever a JavaScript exception happens in
+diff --git a/Source/JavaScriptCore/API/glib/JSCValue.cpp b/Source/JavaScriptCore/API/glib/JSCValue.cpp
+index cd0e320b5044d..75d1e8c264c9e 100644
+--- a/Source/JavaScriptCore/API/glib/JSCValue.cpp
++++ b/Source/JavaScriptCore/API/glib/JSCValue.cpp
+@@ -1125,9 +1125,9 @@ static void jscValueObjectDefinePropertyAccessor(JSCValue* value, const char* pr
+  * @property_name: the name of the property to define
+  * @flags: #JSCValuePropertyFlags
+  * @property_type: the #GType of the property
+- * @getter: (scope async) (nullable): a #GCallback to be called to get the property value
+- * @setter: (scope async) (nullable): a #GCallback to be called to set the property value
+- * @user_data: (closure): user data to pass to @getter and @setter
++ * @getter: (scope async) (nullable) (closure user_data): a #GCallback to be called to get the property value
++ * @setter: (scope async) (nullable) (closure user_data): a #GCallback to be called to set the property value
++ * @user_data: user data to pass to @getter and @setter
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  *
+  * Define or modify a property with @property_name in object referenced by @value. When the
+@@ -1181,7 +1181,7 @@ static GRefPtr<JSCValue> jscValueFunctionCreate(JSCContext* context, const char*
+  * @context: a #JSCContext:
+  * @name: (nullable): the function name or %NULL
+  * @callback: (scope async): a #GCallback.
+- * @user_data: (closure): user data to pass to @callback.
++ * @user_data: user data to pass to @callback.
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the function return value, or %G_TYPE_NONE if the function is void.
+  * @n_params: the number of parameter types to follow or 0 if the function doesn't receive parameters.
+@@ -1222,7 +1222,7 @@ JSCValue* jsc_value_new_function(JSCContext* context, const char* name, GCallbac
+  * @context: a #JSCContext
+  * @name: (nullable): the function name or %NULL
+  * @callback: (scope async): a #GCallback.
+- * @user_data: (closure): user data to pass to @callback.
++ * @user_data: user data to pass to @callback.
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the function return value, or %G_TYPE_NONE if the function is void.
+  * @n_parameters: the number of parameters
+@@ -1261,7 +1261,7 @@ JSCValue* jsc_value_new_functionv(JSCContext* context, const char* name, GCallba
+  * @context: a #JSCContext
+  * @name: (nullable): the function name or %NULL
+  * @callback: (scope async): a #GCallback.
+- * @user_data: (closure): user data to pass to @callback.
++ * @user_data: user data to pass to @callback.
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  * @return_type: the #GType of the function return value, or %G_TYPE_NONE if the function is void.
+  *
+@@ -1474,8 +1474,8 @@ WEBKIT_DEFINE_ASYNC_DATA_STRUCT(ArrayBufferDeallocatorContext)
+  * @context: A #JSCContext
+  * @data: Pointer to a region of memory.
+  * @size: Size in bytes of the memory region.
+- * @destroy_notify: (nullable): destroy notifier for @user_data.
+- * @user_data: (closure): user data.
++ * @destroy_notify: (nullable) (closure user_data): destroy notifier for @user_data.
++ * @user_data: user data.
+  *
+  * Creates a new %ArrayBuffer from existing @data in memory.
+  *
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitCookieManager.cpp b/Source/WebKit/UIProcess/API/glib/WebKitCookieManager.cpp
+index a0334b028c1c6..61ffba05cc188 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitCookieManager.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitCookieManager.cpp
+@@ -225,7 +225,7 @@ void webkit_cookie_manager_set_accept_policy(WebKitCookieManager* manager, WebKi
+  * @cookie_manager: a #WebKitCookieManager
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously get the cookie acceptance policy of @cookie_manager.
+  *
+@@ -272,7 +272,7 @@ WebKitCookieAcceptPolicy webkit_cookie_manager_get_accept_policy_finish(WebKitCo
+  * @cookie: the #SoupCookie to be added
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously add a #SoupCookie to the underlying storage.
+  *
+@@ -318,7 +318,7 @@ gboolean webkit_cookie_manager_add_cookie_finish(WebKitCookieManager* manager, G
+  * @uri: the URI associated to the cookies to be retrieved
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously get a list of #SoupCookie from @cookie_manager.
+  *
+@@ -376,7 +376,7 @@ GList* webkit_cookie_manager_get_cookies_finish(WebKitCookieManager* manager, GA
+  * @cookie: the #SoupCookie to be deleted
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously delete a #SoupCookie from the current session.
+  *
+@@ -422,7 +422,7 @@ gboolean webkit_cookie_manager_delete_cookie_finish(WebKitCookieManager* manager
+  * @cookie_manager: a #WebKitCookieManager
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously get the list of domains for which @cookie_manager contains cookies.
+  *
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitFaviconDatabase.cpp b/Source/WebKit/UIProcess/API/glib/WebKitFaviconDatabase.cpp
+index e62564b488b89..fbe3737664dba 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitFaviconDatabase.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitFaviconDatabase.cpp
+@@ -203,9 +203,9 @@ void webkitFaviconDatabaseGetFaviconInternal(WebKitFaviconDatabase* database, co
+  * @database: a #WebKitFaviconDatabase
+  * @page_uri: URI of the page for which we want to retrieve the favicon
+  * @cancellable: (allow-none): A #GCancellable or %NULL.
+- * @callback: (scope async): A #GAsyncReadyCallback to call when the request is
++ * @callback: (scope async) (nullable): A #GAsyncReadyCallback to call when the request is
+  *            satisfied or %NULL if you don't care about the result.
+- * @user_data: (closure): The data to pass to @callback.
++ * @user_data: The data to pass to @callback.
+  *
+  * Asynchronously obtains a #cairo_surface_t of the favicon.
+  *
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitUserContentFilterStore.cpp b/Source/WebKit/UIProcess/API/glib/WebKitUserContentFilterStore.cpp
+index 6952a86af5cad..8b3b91afc86e2 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitUserContentFilterStore.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitUserContentFilterStore.cpp
+@@ -216,7 +216,7 @@ static void webkitUserContentFilterStoreSaveBytes(GRefPtr<GTask>&& task, String&
+  * @source: #GBytes containing the rule set in JSON format
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when saving is completed
+- * @user_data: (closure): the data to pass to the callback function
++ * @user_data: the data to pass to the callback function
+  *
+  * Asynchronously save a content filter from a set source rule.
+  *
+@@ -282,7 +282,7 @@ WEBKIT_DEFINE_ASYNC_DATA_STRUCT(SaveTaskData)
+  * @file: a #GFile containing the rule set in JSON format
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when saving is completed
+- * @user_data: (closure): the data to pass to the callback function
++ * @user_data: the data to pass to the callback function
+  *
+  * Asynchronously save a content filter from the contents of a file.
+  *
+@@ -365,7 +365,7 @@ WebKitUserContentFilter* webkit_user_content_filter_store_save_from_file_finish(
+  * @identifier: a filter identifier
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the removal is completed
+- * @user_data: (closure): the data to pass to the callback function
++ * @user_data: the data to pass to the callback function
+  *
+  * Asynchronously remove a content filter given its @identifier.
+  *
+@@ -424,7 +424,7 @@ gboolean webkit_user_content_filter_store_remove_finish(WebKitUserContentFilterS
+  * @identifier: a filter identifier
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the load is completed
+- * @user_data: (closure): the data to pass to the callback function
++ * @user_data: the data to pass to the callback function
+  *
+  * Asynchronously load a content filter given its @identifier.
+  *
+@@ -485,7 +485,7 @@ WebKitUserContentFilter* webkit_user_content_filter_store_load_finish(WebKitUser
+  * @store: a #WebKitUserContentFilterStore
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the removal is completed
+- * @user_data: (closure): the data to pass to the callback function
++ * @user_data: the data to pass to the callback function
+  *
+  * Asynchronously retrieve a list of the identifiers for all the stored filters.
+  *
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp b/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
+index e1715db53e7ed..e7f316fcd2348 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
+@@ -1267,7 +1267,7 @@ void webkit_web_context_set_additional_plugins_directory(WebKitWebContext*, cons
+  * @context: a #WebKitWebContext
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously get the list of installed plugins.
+  *
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitWebResource.cpp b/Source/WebKit/UIProcess/API/glib/WebKitWebResource.cpp
+index 41e738d26e889..8d94cb85b39e8 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebResource.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebResource.cpp
+@@ -371,7 +371,7 @@ static void resourceDataCallback(API::Data* wkData, GTask* task)
+  * @resource: a #WebKitWebResource
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously get the raw data for @resource.
+  *
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitWebView.cpp b/Source/WebKit/UIProcess/API/glib/WebKitWebView.cpp
+index c2618b8240ff6..9b1ef8e837383 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebView.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebView.cpp
+@@ -3834,7 +3834,7 @@ gdouble webkit_web_view_get_zoom_level(WebKitWebView* webView)
+  * @command: the command to check
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously check if it is possible to execute the given editing command.
+  *
+@@ -4272,7 +4272,7 @@ JSCValue* webkit_web_view_call_async_javascript_function_finish(WebKitWebView* w
+  * @script: the script to run
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the script finished
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously run @script in the context of the current page in @web_view.
+  *
+@@ -4361,7 +4361,7 @@ WebKitJavascriptResult* webkit_web_view_run_javascript_finish(WebKitWebView* web
+  * @world_name: the name of a #WebKitScriptWorld
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the script finished
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously run @script in the script world.
+  *
+@@ -4390,7 +4390,7 @@ void webkit_web_view_run_javascript_in_world(WebKitWebView* webView, const gchar
+  * @world_name (nullable): the name of a #WebKitScriptWorld, if no name (i.e. %NULL) is provided, the default world is used. Any value that is not %NULL is a distinct world.
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the script finished
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously run @body in the script world with name @world_name of the current page context in
+  * @web_view. If WebKitSettings:enable-javascript is FALSE, this method will do nothing. This API
+@@ -4502,7 +4502,7 @@ static void resourcesStreamReadCallback(GObject* object, GAsyncResult* result, g
+  * @resource: the location of the resource to load
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the script finished
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously run the script from @resource.
+  *
+@@ -4659,7 +4659,7 @@ static void getContentsAsMHTMLDataCallback(API::Data* wkData, GTask* taskPtr)
+  * @save_mode: the #WebKitSaveMode specifying how the web page should be saved.
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously save the current web page.
+  *
+@@ -4722,7 +4722,7 @@ GInputStream* webkit_web_view_save_finish(WebKitWebView* webView, GAsyncResult*
+  * @save_mode: the #WebKitSaveMode specifying how the web page should be saved.
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously save the current web page.
+  *
+@@ -4859,7 +4859,7 @@ gboolean webkit_web_view_get_tls_info(WebKitWebView* webView, GTlsCertificate**
+  * @options: #WebKitSnapshotOptions for the snapshot
+  * @cancellable: (allow-none): a #GCancellable
+  * @callback: (scope async): a #GAsyncReadyCallback
+- * @user_data: (closure): user data
++ * @user_data: user data
+  *
+  * Asynchronously retrieves a snapshot of @web_view for @region.
+  *
+@@ -5054,8 +5054,8 @@ void webkit_web_view_restore_session_state(WebKitWebView* webView, WebKitWebView
+ /**
+  * webkit_web_view_add_frame_displayed_callback:
+  * @web_view: a #WebKitWebView
+- * @callback: a #WebKitFrameDisplayedCallback
+- * @user_data: (closure): user data to pass to @callback
++ * @callback: (scope notified): a #WebKitFrameDisplayedCallback
++ * @user_data: user data to pass to @callback
+  * @destroy_notify: (nullable): destroy notifier for @user_data
+  *
+  * Add a callback to be called when the backend notifies that a frame has been displayed in @web_view.
+@@ -5108,7 +5108,7 @@ void webkit_web_view_remove_frame_displayed_callback(WebKitWebView* webView, uns
+  * @message: a #WebKitUserMessage
+  * @cancellable: (nullable): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): (nullable): A #GAsyncReadyCallback to call when the request is satisfied or %NULL
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Send @message to the #WebKitWebPage corresponding to @web_view.
+  *
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManager.cpp b/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManager.cpp
+index d87f96b79aa18..41dde04eb2763 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManager.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebsiteDataManager.cpp
+@@ -1154,7 +1154,7 @@ static OptionSet<WebsiteDataType> toWebsiteDataTypes(WebKitWebsiteDataTypes type
+  * @types: #WebKitWebsiteDataTypes
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously get the list of #WebKitWebsiteData for the given @types.
+  *
+@@ -1209,7 +1209,7 @@ GList* webkit_website_data_manager_fetch_finish(WebKitWebsiteDataManager* manage
+  * @website_data: (element-type WebKitWebsiteData): a #GList of #WebKitWebsiteData
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously removes the website data in the given @website_data list.
+  *
+@@ -1276,7 +1276,7 @@ gboolean webkit_website_data_manager_remove_finish(WebKitWebsiteDataManager* man
+  * @timespan: a #GTimeSpan
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously clear the website data of the given @types modified in the past @timespan.
+  *
+@@ -1596,7 +1596,7 @@ GList* webkit_itp_third_party_get_first_parties(WebKitITPThirdParty* thirdParty)
+  * @manager: a #WebKitWebsiteDataManager
+  * @cancellable: (allow-none): a #GCancellable or %NULL to ignore
+  * @callback: (scope async): a #GAsyncReadyCallback to call when the request is satisfied
+- * @user_data: (closure): the data to pass to callback function
++ * @user_data: the data to pass to callback function
+  *
+  * Asynchronously get the list of #WebKitITPThirdParty seen for @manager.
+  *
+diff --git a/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebExtension.cpp b/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebExtension.cpp
+index 18f6a88ea3d3e..c7d2d9cff693b 100644
+--- a/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebExtension.cpp
++++ b/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebExtension.cpp
+@@ -251,8 +251,8 @@ WebKitWebPage* webkit_web_extension_get_page(WebKitWebExtension* extension, guin
+  * @extension: a #WebKitWebExtension
+  * @message: a #WebKitUserMessage
+  * @cancellable: (nullable): a #GCancellable or %NULL to ignore
+- * @callback: (scope async): (nullable): A #GAsyncReadyCallback to call when the request is satisfied or %NULL
+- * @user_data: (closure): the data to pass to callback function
++ * @callback: (scope async) (nullable): A #GAsyncReadyCallback to call when the request is satisfied or %NULL
++ * @user_data: the data to pass to callback function
+  *
+  * Send @message to the #WebKitWebContext corresponding to @extension. If @message is floating, it's consumed.
+  *
+diff --git a/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebPage.cpp b/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebPage.cpp
+index efc7ddddeacbe..60d7b1f2009ce 100644
+--- a/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebPage.cpp
++++ b/Source/WebKit/WebProcess/InjectedBundle/API/glib/WebKitWebPage.cpp
+@@ -906,8 +906,8 @@ WebKitWebEditor* webkit_web_page_get_editor(WebKitWebPage* webPage)
+  * @web_page: a #WebKitWebPage
+  * @message: a #WebKitUserMessage
+  * @cancellable: (nullable): a #GCancellable or %NULL to ignore
+- * @callback: (scope async): (nullable): A #GAsyncReadyCallback to call when the request is satisfied or %NULL
+- * @user_data: (closure): the data to pass to callback function
++ * @callback: (scope async) (nullable): A #GAsyncReadyCallback to call when the request is satisfied or %NULL
++ * @user_data: the data to pass to callback function
+  *
+  * Send @message to the #WebKitWebView corresponding to @web_page. If @message is floating, it's consumed.
+  *
