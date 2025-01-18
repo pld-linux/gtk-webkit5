@@ -31,6 +31,7 @@ Patch1:		%{name}-icu59.patch
 Patch2:		%{name}-parallel-gir.patch
 Patch3:		%{name}-driver-version-suffix.patch
 Patch4:		%{name}-gcc13.patch
+Patch5:		icu76.patch
 URL:		https://webkitgtk.org/
 BuildRequires:	/usr/bin/ld.gold
 BuildRequires:	EGL-devel
@@ -173,11 +174,12 @@ Dokumentacja API portu WebKitu do GTK 4.
 
 %prep
 %setup -q -n webkitgtk-%{version}
-%patch0 -p1
-%patch1 -p1
-%patch2 -p1
-%patch3 -p1
-%patch4 -p1
+%patch -P 0 -p1
+%patch -P 1 -p1
+%patch -P 2 -p1
+%patch -P 3 -p1
+%patch -P 4 -p1
+%patch -P 5 -p1
 
 %build
 %if %{with lowmem}
