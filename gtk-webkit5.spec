@@ -32,7 +32,7 @@ Patch2:		%{name}-parallel-gir.patch
 Patch3:		%{name}-driver-version-suffix.patch
 Patch4:		%{name}-gcc13.patch
 Patch5:		icu76.patch
-Patch6:		glib-api-closure.patch
+Patch6:		glib-api.patch
 Patch7:		libxml-2.12.patch
 URL:		https://webkitgtk.org/
 BuildRequires:	/usr/bin/ld.gold
@@ -54,7 +54,7 @@ BuildRequires:	gettext-tools
 BuildRequires:	gi-docgen
 BuildRequires:	glib2-devel >= 1:2.67.1
 BuildRequires:	glibc-misc
-%{?with_introspection:BuildRequires:	gobject-introspection-devel >= 1.32.0}
+%{?with_introspection:BuildRequires:	gobject-introspection-devel >= 1.79.2}
 BuildRequires:	gperf >= 3.0.1
 BuildRequires:	gstreamer-devel >= 1.14
 BuildRequires:	gstreamer-gl-devel >= 1.10.0
