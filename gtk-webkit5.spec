@@ -21,7 +21,7 @@ Summary(pl.UTF-8):	Port osadzalnego komponentu WWW WebKit do GTK 4
 Name:		gtk-webkit5
 # 2.38.x is the last with gtk-webkit5 library
 Version:	2.38.6
-Release:	5
+Release:	6
 License:	BSD-like
 Group:		X11/Libraries
 Source0:	https://webkitgtk.org/releases/webkitgtk-%{version}.tar.xz
